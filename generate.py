@@ -1,38 +1,50 @@
 import torch
-import torch.nn as nn
-from torchtyping import TensorType
+from model.gpt import GPT
 
-class Solution:
-    def generate(
-        self,
-        model,
-        new_chars: int,
-        context: TensorType[int],
-        context_length: int,
-        int_to_char: dict
-    ) -> str:
-        generator = torch.manual_seed(0)
-        initial_state = generator.get_state()
+# =========================
+# SIMPLE GENERATION FUNCTION
+# =========================
+def generate(model, start_tokens, max_new_tokens, context_length):
+    model.eval()
 
-        result = []
-        for i in range(new_chars):
-            # 1. Crop context
-            if context.size(1) > context_length:
-                context = context[:, -context_length:]
+    tokens = start_tokens
 
-            # 2. Forward pass
-            logits = model(context)  # (B, T, vocab_size)
-            last_logits = logits[:, -1, :]  # (B, vocab_size)
-            probs = torch.softmax(last_logits, dim=-1)
+    for _ in range(max_new_tokens):
+        tokens_cond = tokens[-context_length:]
 
-            # 3. Sample next token (reproducible)
-            generator.set_state(initial_state)
-            next_token = torch.multinomial(probs, num_samples=1, generator=generator)
+        logits = model(tokens_cond.unsqueeze(0))  # (1, T, C)
+        logits = logits[:, -1, :]  # last token
 
-            # 4. Append to context
-            context = torch.cat([context, next_token], dim=1)
+        probs = torch.softmax(logits, dim=-1)
+        next_token = torch.multinomial(probs, num_samples=1)
 
-            # 5. Map to character
-            result.append(int_to_char[next_token.item()])
+        tokens = torch.cat([tokens, next_token.squeeze(0)], dim=0)
 
-        return "".join(result)
+    return tokens
+
+
+# =========================
+# MAIN RUN
+# =========================
+if __name__ == "__main__":
+    print("🚀 Generating text...")
+
+    # Same config as training
+    vocab_size = 100
+    context_length = 10
+
+    model = GPT(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        model_dim=64,
+        num_blocks=2,
+        num_heads=2
+    )
+
+    # ⚠️ No trained weights yet → random output
+    start = torch.randint(0, vocab_size, (5,))
+
+    output = generate(model, start, max_new_tokens=20, context_length=context_length)
+
+    print("Generated tokens:")
+    print(output.tolist())
